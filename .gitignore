@@ -3,3 +3,21 @@ CLAUDE.md
 .claude/
 .venv
 uv.lock
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+
+# Secrets / local config
+.env
+
+# Data (raw API dumps, DuckDB files)
+data/
+*.duckdb
+
+# macOS
+.DS_Store
