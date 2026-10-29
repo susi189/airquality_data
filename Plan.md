@@ -86,9 +86,11 @@ Roles are defined in `roles.yaml`: allowed schemas, max rows, timeout, queries p
 ### Phase 0: Housekeeping
 - [x] Python version consistent (3.13 in `.python-version` and `pyproject.toml`)
 - [x] Update outdated `CLAUDE.md` (version note, dependencies, current ingest code)
-- [ ] Add dev dependencies: `ruff`, `pytest`
-- [ ] Restructure into `ingest/`, `dbt_project/`, `mcp_server/`, `evals/`
-- [ ] Update `CLAUDE.md` with the new layout and commands
+- [x] Add dev dependencies: `ruff`, `pytest` (+ ruff config in `pyproject.toml`)
+- [x] Restructure into the `src/aq/` package (`aq.ingest` now; other modules are added in the phase that needs them)
+- [x] First tests: `tests/ingest/test_transform.py`
+- [x] Stop gitignoring `uv.lock` and `CLAUDE.md` so they're tracked
+- [x] Update `CLAUDE.md` with the new layout and commands
 
 ### Phase 1: Warehouse
 - [ ] Load existing API outputs into DuckDB `raw` schema

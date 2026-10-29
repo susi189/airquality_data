@@ -1,8 +1,5 @@
-CLAUDE.md
-
 .claude/
 .venv
-uv.lock
 
 # Python
 __pycache__/
