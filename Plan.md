@@ -15,6 +15,7 @@ safely, with role-based access, PII masking, query limits, an audit log, and an 
 ## Learning goals
 
 - dbt modelling: staging, marts, tests, docs, `meta` tags, macros
+- Orchestration with Dagster: assets, daily partitions, schedules, backfills, dbt integration
 - Designing for LLM consumers: schema docs that make text-to-SQL accurate
 - MCP server development (tools, resources, transports)
 - Defense in depth: masking in the data layer plus query checks in the server
@@ -26,6 +27,7 @@ safely, with role-based access, PII masking, query limits, an audit log, and an 
 |------------|-------------------------------------|------------------------------------------------------------------------|
 | Warehouse  | DuckDB (single local file)          | Free and fast, no server to run. Can move to Postgres/Snowflake later. |
 | Modelling  | dbt-core + dbt-duckdb               | `manifest.json` gives the server schema, docs and PII tags in one place |
+| Orchestration | Dagster + dagster-dbt            | Every raw file, raw table and dbt model in one lineage graph; daily partitions |
 | MCP server | Python MCP SDK (FastMCP), stdio     | Simplest to connect to Claude Desktop / Claude Code                    |
 | SQL safety | sqlglot                             | Checks each query's parsed syntax tree, not its raw text               |
 | Evals      | pytest-style harness + Claude API   | Execution accuracy + safety pass rate                                  |
@@ -34,8 +36,9 @@ safely, with role-based access, PII masking, query limits, an audit log, and an 
 ## Architecture
 
 ```
-API ingest (existing) ──► raw files ──► DuckDB `raw` schema
-Faker seed script ─────────────────────► DuckDB `raw` schema
+          ┌──────────── Dagster: daily schedule, retries, backfills ────────────┐
+API ingest (aq-ingest) ──► raw files ──► aq-load ──► DuckDB `raw` schema
+Faker seed (aq-seed) ──────────────────────────────► DuckDB `raw` schema
                                               │ dbt
                      staging ──► marts ──► role views
                                            (marts_public / marts_analyst / marts_cs / marts_admin)
@@ -93,12 +96,81 @@ Roles are defined in `roles.yaml`: allowed schemas, max rows, timeout, queries p
 - [x] Update `CLAUDE.md` with the new layout and commands
 
 ### Phase 1: Warehouse
-- [ ] Load existing API outputs into DuckDB `raw` schema
-- [ ] Faker seed script for the business tables (fixed seed)
-- [ ] dbt project with dbt-duckdb: staging models, marts
-- [ ] dbt tests (unique, not_null, relationships, accepted_values)
+
+Built against the 2 days already pulled (2025-09-01 and 2025-09-02). A larger pull is only needed for Phase 4.
+
+#### 1.1 Ingest hourly measurements
+- [x] API v4 for all endpoints; `meta` key skipped in `transform_data()`
+- [x] `fetch_measures()`: one day, one pollutant, all stations, hourly (scope 2)
+- [x] `transform_measures()` + tests against a real sample
+- [x] `aq-ingest --start --end` for PM10, PM2.5, NO2, O3, SO2; days already saved are skipped
+- [x] Test pull of 2 days: ~71,500 measurement rows, 2,402 stations (includes closed stations)
+
+#### 1.2 Load raw files into DuckDB (`aq-load`)
+- [ ] `uv add duckdb`; `DUCKDB_PATH = data/aq.duckdb` in `config.py`
+- [ ] `src/aq/load/` with an `aq-load` command
+- [ ] Tables: `raw.components`, `raw.stations` (newest file each), `raw.measures` (all files)
+- [ ] Full rebuild on every run (simple and always correct at this size)
+- [ ] Mechanical renames only (`"station id"` → `station_id`); values stay as the API delivers them
+- [ ] Lineage columns `_source_file`, `_loaded_at`
+- [ ] Bulk load, not row by row (must stay fast at ~4M rows)
+- [ ] Tests: load the fixture into an in-memory DuckDB, check row counts and columns
+
+#### 1.3 Synthetic business data (`aq-seed`)
+- [ ] `uv add faker` (regular dependency, since `aq-seed` is part of the build)
+- [ ] Fixed random seed so every run produces the same data
+- [ ] Tables:
+  - `customers` (~200): names, emails, phones, addresses
+  - `subscriptions` (~500): customer → active station + pollutant + threshold
+  - `alerts_sent`: derived from **real** measurements above a subscription's threshold
+  - `technicians` (~25): assigned to federal states (`network code`)
+  - `maintenance_log` (~300): technician → real station, free-text notes
+  - `invoices`: monthly per customer, based on subscriptions
+
+#### 1.4 dbt setup
+- [ ] `uv add dbt-core dbt-duckdb` (check Python 3.13 support first)
+- [ ] `dbt_project/` with `profiles.yml` inside the project, pointing at `data/aq.duckdb`
+- [ ] `sources.yml` for the `raw` tables
+- [ ] Command: `uv run dbt build --project-dir dbt_project --profiles-dir dbt_project`
+
+#### 1.5 Staging models
+- [ ] `stg_uba__stations`: cast coordinates/dates, `''` → `null`, `is_active` from `station active to`
+      (check how currently active stations show it)
+- [ ] `stg_uba__measures`: local CET/CEST → UTC (the autumn clock-change hour appears twice), keep `null` values,
+      keep `index` raw and unexplained
+- [ ] `stg_uba__components`: readable names (`PM2` → `PM2.5`), unit alongside each pollutant
+- [ ] `stg_aqn__*` for the synthetic tables
+
+#### 1.6 Marts
+- [ ] Sensor: `dim_station`, `dim_component`, `fct_measurements_hourly`
+- [ ] Business: `dim_customer`, `dim_technician`, `fct_alerts`, `fct_maintenance`, `fct_invoices`
+
+#### 1.7 Tests and documentation
+- [ ] dbt tests: unique, not_null, relationships (every measurement has a real station), accepted_values
 - [ ] Column descriptions for every mart column (these directly improve text-to-SQL accuracy)
+- [ ] `dbt docs generate` for the README
+
+#### 1.8 PII tags and masked views (could move to the start of Phase 3)
 - [ ] PII `meta` tags + masking macro generating per-role views
+
+### Phase 1b: Orchestration (Dagster)
+
+Starts once `aq-load` and dbt exist (after 1.4 or 1.5).
+
+- [ ] `uv add dagster dagster-webserver dagster-dbt`; run locally with `dagster dev`
+- [ ] Assets:
+  - `raw_measures` with **daily partitions** (maps onto the one-file-per-pollutant-per-day layout)
+  - `raw` DuckDB tables (from `aq-load`)
+  - dbt models, loaded automatically from the dbt manifest via `dagster-dbt`
+- [ ] Daily schedule (e.g. 06:00): pull yesterday and **re-pull the 2 days before**, because recent values may be
+      preliminary and get corrected (check how UBA handles this). Requires a way to overwrite saved days, since
+      `aq-ingest` currently skips them.
+- [ ] Retries on API errors
+- [ ] Build into a **new DuckDB file and swap it in** at the end, so the MCP server (DuckDB allows one writer) always
+      sees a complete version
+- [ ] Backfills through Dagster partitions (replaces manual `--start/--end` runs)
+- [ ] Optional: dbt source freshness check and an alert on failed runs
+- [ ] Known limit: runs only while the Mac is awake; missed days are caught by the re-pull window or a backfill
 
 ### Phase 2: MCP server MVP
 - [ ] FastMCP server over stdio
@@ -149,3 +221,7 @@ Roles are defined in `roles.yaml`: allowed schemas, max rows, timeout, queries p
   goal; dbt makes switching mostly a matter of configuration.
 - **Masking style:** hash vs. partial (e.g. `j***@example.com`). Partial is easier to read; a hash still allows joins
   and counts on the masked column.
+- **Data volume:** 2 days for now. Before Phase 4, pull 7 days (~35 requests, ~15 MB) or 30 days (~150 requests,
+  ~65 MB); 90 days (~450 requests, ~200 MB) is optional. Once Dagster exists, this becomes a backfill.
+- **Raw loading (1.2):** recommended full rebuild on every run and snake_case column names; not yet confirmed.
+- **`index` field in measures:** meaning unknown; stored raw and not exposed to the AI until understood.
