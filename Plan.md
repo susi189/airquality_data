@@ -107,14 +107,15 @@ Built against the 2 days already pulled (2025-09-01 and 2025-09-02). A larger pu
 - [x] Test pull of 2 days: ~71,500 measurement rows, 2,402 stations (includes closed stations)
 
 #### 1.2 Load raw files into DuckDB (`aq-load`)
-- [ ] `uv add duckdb`; `DUCKDB_PATH = data/aq.duckdb` in `config.py`
-- [ ] `src/aq/load/` with an `aq-load` command
-- [ ] Tables: `raw.components`, `raw.stations` (newest file each), `raw.measures` (all files)
-- [ ] Full rebuild on every run (simple and always correct at this size)
-- [ ] Mechanical renames only (`"station id"` → `station_id`); values stay as the API delivers them
-- [ ] Lineage columns `_source_file`, `_loaded_at`
-- [ ] Bulk load, not row by row (must stay fast at ~4M rows)
-- [ ] Tests: load the fixture into an in-memory DuckDB, check row counts and columns
+- [x] `uv add duckdb`; `DUCKDB_PATH = data/aq.duckdb` in `config.py`
+- [x] `src/aq/load/` with an `aq-load` command
+- [x] Tables: `raw.components`, `raw.stations` (newest file each), `raw.measures` (all files)
+- [x] Full rebuild on every run, in one transaction (simple and always correct at this size)
+- [x] Mechanical renames only (`"station id"` → `station_id`); values stay as the API delivers them
+- [x] Lineage columns `_source_file`, `_loaded_at`
+- [x] Bulk load via a temporary NDJSON file + `read_json`, not row by row
+- [x] Tests: load the fixture into an in-memory DuckDB, check row counts, columns, types and raw values
+- [ ] First real load of the 2-day pull
 
 #### 1.3 Synthetic business data (`aq-seed`)
 - [ ] `uv add faker` (regular dependency, since `aq-seed` is part of the build)
