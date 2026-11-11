@@ -7,7 +7,7 @@ import duckdb
 
 from aq.ingest.transform import transform_data, transform_measures
 
-METADATA_TABLES = ["components", "stations"]
+REFERENCE_TABLES = ["components", "stations"]
 # Explicit types keep values as the API delivers them; DuckDB would otherwise guess dates from strings.
 MEASURES_COLUMNS = {
     "station_id": "VARCHAR",
@@ -48,7 +48,7 @@ def load_table(
     columns: dict[str, str] | None = None,
 ) -> int:
     # Records are streamed file by file into one newline-delimited JSON file, then bulk-loaded by DuckDB.
-    # Without explicit columns (metadata tables) every column is VARCHAR, matching the API's all-string values.
+    # Without explicit columns (reference tables) every column is VARCHAR, matching the API's all-string values.
     with tempfile.TemporaryDirectory() as tmp:
         ndjson = Path(tmp) / f"{table}.ndjson"
         with ndjson.open("w", encoding="utf-8") as f:
@@ -79,7 +79,7 @@ def load_all(con: duckdb.DuckDBPyConnection, raw_dir: Path) -> dict[str, int]:
     con.execute("create schema if not exists raw")
     con.begin()
     try:
-        for table in METADATA_TABLES:
+        for table in REFERENCE_TABLES:
             path = latest_file(raw_dir / table)
             if path is not None:
                 counts[table] = load_table(con, table, [path], transform_data)

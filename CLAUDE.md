@@ -16,7 +16,7 @@ All Python code lives in one installable package, `aq`, under `src/` (src layout
 - `src/aq/config.py`: shared paths/settings (`RAW_DIR = data/raw`, `DUCKDB_PATH = data/aq.duckdb`, both relative to
   the working directory)
 - `src/aq/ingest/`: pulls from the Umweltbundesamt air data API v4 (`https://luftdaten.umweltbundesamt.de/api/air-data/v4`)
-  - `fetch.py`: `fetch()` gets an endpoint with a shared `httpx.Client`; `save_raw()` writes metadata endpoints to
+  - `fetch.py`: `fetch()` gets an endpoint with a shared `httpx.Client`; `save_raw()` writes reference endpoints to
     `data/raw/<endpoint>/<YYYY-MM-DD>.json`. `fetch_measures()` gets one day of hourly values (scope 2) for one
     component across all stations, saved to `data/raw/measures/<component id>/<YYYY-MM-DD>.json`.
   - `transform.py`: `transform_data()` turns flat index-based responses into dicts, skipping metadata keys
@@ -25,9 +25,9 @@ All Python code lives in one installable package, `aq`, under `src/` (src layout
   - `__main__.py`: pulls `components` and `stations`, then measures for PM10, PM2.5, NO2, O3, SO2 over a date range.
     Days already saved are skipped.
 - `src/aq/load/`: loads `data/raw/` into the DuckDB `raw` schema (`raw.components`, `raw.stations`, `raw.measures`)
-  - `loader.py`: `load_all()` does a full rebuild in one transaction. Metadata tables use the newest file only;
+  - `loader.py`: `load_all()` does a full rebuild in one transaction. Reference tables use the newest file only;
     measures use all files. Column names are snake_cased (`station id` → `station_id`), values stay as the API
-    delivers them (metadata all `VARCHAR`; measures typed via `MEASURES_COLUMNS`). Every row gets `_source_file`
+    delivers them (reference tables all `VARCHAR`; measures typed via `MEASURES_COLUMNS`). Every row gets `_source_file`
     and `_loaded_at`. Records are streamed to a temporary NDJSON file and bulk-loaded with `read_json`.
   - Note: the measures column `index` is a SQL keyword in some contexts; quote it as `"index"` in queries.
 - `tests/`: mirrors `src/aq/` (`tests/ingest/`, `tests/load/`); DuckDB tests use in-memory databases
