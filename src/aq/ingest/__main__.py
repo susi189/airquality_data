@@ -7,7 +7,7 @@ import httpx
 from aq.ingest.fetch import fetch, fetch_measures, measures_path, save_json, save_raw
 from aq.ingest.transform import transform_data, transform_measures
 
-ENDPOINTS = ["components", "stations"]
+REFERENCE_ENDPOINTS = ["components", "stations"]
 # Pollutants with hourly data at most stations (checked against /measures/limits, Oct 2026)
 MEASURE_COMPONENTS = {1: "PM10", 9: "PM2.5", 5: "NO2", 3: "O3", 4: "SO2"}
 REQUEST_PAUSE_SECONDS = 0.5
@@ -24,8 +24,8 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def ingest_metadata(client: httpx.Client) -> None:
-    for endpoint in ENDPOINTS:
+def ingest_reference(client: httpx.Client) -> None:
+    for endpoint in REFERENCE_ENDPOINTS:
         try:
             data = fetch(client, endpoint)
             path = save_raw(data, endpoint)
@@ -60,7 +60,7 @@ def ingest_measures(client: httpx.Client, start: date, end: date) -> None:
 def main():
     args = parse_args()
     with httpx.Client(timeout=30) as client:
-        ingest_metadata(client)
+        ingest_reference(client)
         ingest_measures(client, args.start, args.end)
 
 

@@ -96,7 +96,7 @@ def test_measures_values_stay_raw(raw_dir: Path):
     ]
 
 
-def test_metadata_uses_newest_file_and_keeps_strings(raw_dir: Path):
+def test_reference_tables_use_newest_file_and_keep_strings(raw_dir: Path):
     with duckdb.connect() as con:
         load_all(con, raw_dir)
         components = con.execute("select component_id, component_code from raw.components order by 1").fetchall()
