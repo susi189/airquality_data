@@ -1,0 +1,17 @@
+name: aq_warehouse
+version: "1.0.0"
+profile: aq_warehouse          # must match the top key in profiles.yml
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  aq_warehouse:
+    staging:
+      +materialized: view      # staging = light cleanup, no need to store a copy
+      +schema: staging
+    marts:
+      +materialized: table     # marts = what the AI queries, stored for speed
+      +schema: marts

@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: uba
+    description: Raw tables from the Umweltbundesamt air data API v4, loaded by `aq-load`. Values are unchanged from the API.
+    schema: raw
+    tables:
+      - name: components
+        description: Pollutants measured by the network (one row per pollutant).
+      - name: stations
+        description: Every measuring station ever operated, including closed ones. All values are text; missing values are empty strings.
+      - name: measures
+        description: Hourly averages (scope 2), one row per station, pollutant and hour. Times are local CET/CEST.

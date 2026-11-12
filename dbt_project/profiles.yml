@@ -1,0 +1,8 @@
+aq_warehouse:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ../data/aq.duckdb     # relative to where dbt is run; we'll always run from the repo root
+      schema: main
+      threads: 4
