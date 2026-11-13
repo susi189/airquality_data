@@ -99,6 +99,10 @@ Roles are defined in `roles.yaml`: allowed schemas, max rows, timeout, queries p
 
 Built against the 2 days already pulled (2025-09-01 and 2025-09-02). A larger pull is only needed for Phase 4.
 
+**Order:** 1.1 → 1.2 → 1.4 → 1.5 (sensor staging) → 1.3 → 1.5 (business staging) → 1.6 → 1.7 → 1.8.
+dbt comes before the synthetic data: sensor staging only needs the raw tables, and `alerts_sent` in 1.3 is easier
+to derive from typed staging models than from raw text.
+
 #### 1.1 Ingest hourly measurements
 - [x] API v4 for all endpoints; `meta` key skipped in `transform_data()`
 - [x] `fetch_measures()`: one day, one pollutant, all stations, hourly (scope 2)
@@ -115,7 +119,7 @@ Built against the 2 days already pulled (2025-09-01 and 2025-09-02). A larger pu
 - [x] Lineage columns `_source_file`, `_loaded_at`
 - [x] Bulk load via a temporary NDJSON file + `read_json`, not row by row
 - [x] Tests: load the fixture into an in-memory DuckDB, check row counts, columns, types and raw values
-- [ ] First real load of the 2-day pull
+- [x] First real load of the 2-day pull: 12 components, 2,402 stations, 71,520 measures, in ~1 second
 
 #### 1.3 Synthetic business data (`aq-seed`)
 - [ ] `uv add faker` (regular dependency, since `aq-seed` is part of the build)
@@ -129,17 +133,21 @@ Built against the 2 days already pulled (2025-09-01 and 2025-09-02). A larger pu
   - `invoices`: monthly per customer, based on subscriptions
 
 #### 1.4 dbt setup
-- [ ] `uv add dbt-core dbt-duckdb` (check Python 3.13 support first)
-- [ ] `dbt_project/` with `profiles.yml` inside the project, pointing at `data/aq.duckdb`
-- [ ] `sources.yml` for the `raw` tables
-- [ ] Command: `uv run dbt build --project-dir dbt_project --profiles-dir dbt_project`
+- [x] `uv add dbt-core dbt-duckdb` (dbt 1.12.7, dbt-duckdb 1.11.1, works with Python 3.13 and DuckDB 2.0)
+- [x] `dbt_project/` (project `aq_warehouse`), created by hand, with `profiles.yml` inside the project
+      (`path: ../data/aq.duckdb`, resolved relative to `dbt_project/`)
+- [x] `_uba_sources.yml` declaring the `raw` tables as source `uba`
+- [x] `generate_schema_name` macro: schemas `staging` / `marts` instead of `main_staging` / `main_marts`
+- [x] First model `stg_uba__components`; `dbt debug` and `dbt build` pass
+- [x] dbt's generated folders (`target/`, `logs/`, `dbt_packages/`, `.user.yml`) gitignored
 
 #### 1.5 Staging models
-- [ ] `stg_uba__stations`: cast coordinates/dates, `''` → `null`, `is_active` from `station active to`
-      (check how currently active stations show it)
+- [x] `stg_uba__components`: integer id, readable names (`PM2` → `PM2.5`), unit alongside each pollutant
+- [ ] Check the data first: how active stations show `station_active_to`; whether `index` maps to value ranges
+- [ ] `stg_uba__stations`: cast coordinates/dates, `''` → `null`, `is_active` from `station_active_to`
 - [ ] `stg_uba__measures`: local CET/CEST → UTC (the autumn clock-change hour appears twice), keep `null` values,
-      keep `index` raw and unexplained
-- [ ] `stg_uba__components`: readable names (`PM2` → `PM2.5`), unit alongside each pollutant
+      keep `index` raw unless the check explains it; unique key station + pollutant + hour
+- [ ] Tests and column descriptions for the staging models (`_uba__models.yml`)
 - [ ] `stg_aqn__*` for the synthetic tables
 
 #### 1.6 Marts
@@ -156,7 +164,7 @@ Built against the 2 days already pulled (2025-09-01 and 2025-09-02). A larger pu
 
 ### Phase 1b: Orchestration (Dagster)
 
-Starts once `aq-load` and dbt exist (after 1.4 or 1.5).
+Can start now that `aq-load` and dbt exist; most useful after 1.5, once there is more than one model.
 
 - [ ] `uv add dagster dagster-webserver dagster-dbt`; run locally with `dagster dev`
 - [ ] Assets:

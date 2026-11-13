@@ -16,5 +16,11 @@ __pycache__/
 data/
 *.duckdb
 
+# dbt (generated on every run)
+target/
+logs/
+dbt_packages/
+.user.yml
+
 # macOS
 .DS_Store

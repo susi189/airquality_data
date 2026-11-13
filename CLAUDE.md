@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Early-stage air quality data project ("AQ Project"). The goal is an MCP server that lets AI assistants query a
 dbt-modelled warehouse safely — see `Plan.md` for the full plan, phases, and progress checklist.
 
-Ingestion and the raw DuckDB load exist. There is no dbt project or MCP server yet.
+Ingestion, the raw DuckDB load, and a dbt project with a first staging model exist. There is no MCP server yet.
 
 ## Layout
 
@@ -34,11 +34,20 @@ All Python code lives in one installable package, `aq`, under `src/` (src layout
   - `tests/ingest/fixtures/`: trimmed real API responses used as test input
   - HTTP calls in tests use `httpx.MockTransport`; tests never call the live API
 - `data/`: raw API dumps and DuckDB files, gitignored
+- `dbt_project/`: dbt project `aq_warehouse` (dbt-core + dbt-duckdb), building on the `raw` tables
+  - `profiles.yml` lives in the project (not `~/.dbt/`). Its DuckDB `path` (`../data/aq.duckdb`) is resolved
+    relative to `dbt_project/`, not the directory dbt is run from.
+  - `dbt_project.yml`: `models/staging/` → views in schema `staging`; `models/marts/` → tables in schema `marts`
+  - `macros/generate_schema_name.sql`: uses custom schema names as-is (`staging`, not dbt's default `main_staging`).
+    Don't comment it out with `--`: Jinja still runs inside SQL comments and the `--` ends up in the schema name.
+  - `models/staging/uba/`: `_uba_sources.yml` declares source `uba` (schema `raw`); one `stg_uba__<table>.sql` per
+    raw table. Exists so far: `stg_uba__components` (integer id, `PM2` → `PM2.5` as `pollutant`, `unit`).
+  - Naming: `stg_<source>__<table>` for staging; sources `uba` (API data) and later `aqn` (synthetic business data)
 
 Planned additions (see `Plan.md` for the step-by-step checklist):
-- `src/aq/seed/` (`aq-seed`: synthetic business data with Faker) — next step (Plan 1.3)
-- `dbt_project/` at the top level
-- Dagster orchestration (Plan Phase 1b), once `aq-load` and dbt exist
+- `stg_uba__stations` and `stg_uba__measures` — next step (Plan 1.5)
+- `src/aq/seed/` (`aq-seed`: synthetic business data with Faker) (Plan 1.3, after 1.5)
+- Dagster orchestration (Plan Phase 1b)
 - `src/aq/mcp_server/` and `src/aq/evals/` (with eval cases in `evals/cases/`)
 
 ## API facts (verified Oct 2026)
@@ -60,12 +69,21 @@ Planned additions (see `Plan.md` for the step-by-step checklist):
 ## Environment
 
 - Managed with `uv` (not pip/venv directly). Python 3.13 (`.python-version` and `requires-python = ">=3.13"`).
-- Dependencies: `httpx`, `duckdb`. Dev dependencies: `ruff`, `pytest`.
+- Dependencies: `httpx`, `duckdb`, `dbt-core`, `dbt-duckdb`. Dev dependencies: `ruff`, `pytest`.
+- DuckDB allows either **one** read-write process or any number of read-only processes on `data/aq.duckdb`. Any
+  open session (DuckDB CLI or UI, even with `-readonly`) blocks `aq-load` and `dbt build` with a lock error.
+  Close it (`.exit`) before building.
 
 ## Commands
 
 - Run ingestion: `uv run aq-ingest --start YYYY-MM-DD --end YYYY-MM-DD` (defaults to yesterday; calls the live API)
 - Load raw files into DuckDB: `uv run aq-load` (rebuilds the `raw` tables in `data/aq.duckdb`)
+- dbt, from inside `dbt_project/`: `uv run dbt debug` / `uv run dbt build` / `uv run dbt run --select <model>`
+  (from the repo root, add `--project-dir dbt_project --profiles-dir dbt_project`). Prefer `dbt build`: it runs
+  tests and skips downstream models when one fails.
+- Pipeline order: `aq-ingest` → `aq-load` → `dbt build`. Python commands run from the repo root (paths in
+  `config.py` are relative to the working directory).
+- Explore: `duckdb -readonly data/aq.duckdb` (DuckDB CLI, `brew install duckdb`); `.exit` before the next build
 - Add a dependency: `uv add <package>`
 - Sync the environment: `uv sync`
 - Add a dev dependency: `uv add --dev <package>`
