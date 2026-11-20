@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Early-stage air quality data project ("AQ Project"). The goal is an MCP server that lets AI assistants query a
 dbt-modelled warehouse safely — see `Plan.md` for the full plan, phases, and progress checklist.
 
-Ingestion, the raw DuckDB load, and a dbt project with a first staging model exist. There is no MCP server yet.
+Ingestion, the raw DuckDB load, and dbt staging models for the API data exist. There are no marts, synthetic
+business data, or MCP server yet.
 
 ## Layout
 
@@ -41,12 +42,19 @@ All Python code lives in one installable package, `aq`, under `src/` (src layout
   - `macros/generate_schema_name.sql`: uses custom schema names as-is (`staging`, not dbt's default `main_staging`).
     Don't comment it out with `--`: Jinja still runs inside SQL comments and the `--` ends up in the schema name.
   - `models/staging/uba/`: `_uba_sources.yml` declares source `uba` (schema `raw`); one `stg_uba__<table>.sql` per
-    raw table. Exists so far: `stg_uba__components` (integer id, `PM2` → `PM2.5` as `pollutant`, `unit`).
+    raw table; `_uba__models.yml` holds column descriptions and tests for all three:
+    - `stg_uba__components`: integer id, `PM2` → `PM2.5` as `pollutant`, `unit`
+    - `stg_uba__stations`: typed ids/coordinates/dates, `''` → `null`, `station_type`, `area_type`, `is_active`
+      (computed at query time against `current_date`)
+    - `stg_uba__measures`: `measure_key` (unique), `measured_from_local`, `measured_to_local` (start + 1 hour),
+      `measured_from_utc` (via `Europe/Berlin`), unrounded `value`, `value_class` (the API's `index`)
+  - Staging models map 1:1 to their source, no joins; joins (e.g. adding `unit` to measures) belong in marts.
+  - `tests/assert_no_measures_after_station_closed.sql`: custom test, `severity: warn`
+  - Generic tests use the dbt 1.10+ syntax with `arguments:` (e.g. under `relationships`, `accepted_values`)
   - Naming: `stg_<source>__<table>` for staging; sources `uba` (API data) and later `aqn` (synthetic business data)
 
 Planned additions (see `Plan.md` for the step-by-step checklist):
-- `stg_uba__stations` and `stg_uba__measures` — next step (Plan 1.5)
-- `src/aq/seed/` (`aq-seed`: synthetic business data with Faker) (Plan 1.3, after 1.5)
+- `src/aq/seed/` (`aq-seed`: synthetic business data with Faker) — next step (Plan 1.3)
 - Dagster orchestration (Plan Phase 1b)
 - `src/aq/mcp_server/` and `src/aq/evals/` (with eval cases in `evals/cases/`)
 
@@ -54,11 +62,20 @@ Planned additions (see `Plan.md` for the step-by-step checklist):
 
 - Measure hours run 1-24 and mark the end of the hour (`time_from=1` = 00:00-01:00). Times are local CET/CEST.
 - Missing measurements come back as `null` value (and `null` index), not as absent rows.
-- The `index` field's meaning is not yet known; keep it raw, don't interpret it.
+- Values are decimals, not whole numbers (e.g. `0.1`); never round them.
+- The `index` field is a pollutant-specific value band derived from `value` (non-overlapping ranges per pollutant,
+  e.g. PM10 in steps of 5 µg/m³, NO2 ~20, SO2 wide uneven bands). It is `null` exactly when `value` is `null`. It is
+  not an official air quality index; staged as `value_class` and kept out of marts. (Checked Nov 2026 on 2 days.)
 - Component ids: PM10=1, PM2.5=9 (code `PM2`), NO2=5, O3=3, SO2=4. CO (2) has no active hourly stations.
 - `/measures/limits` is data availability per scope/component/station (first/last date), not request limits.
 - `stations` returns every station ever operated (~2,400, including closed ones); all values are strings and missing
   values are empty strings (`''`), not `null`.
+- An empty `station active to` means the station is still operating. Some stations have a future closing date.
+- Measures also include recently closed stations, with `null` values only. So not every `null` value is a sensor
+  gap; some rows belong to stations that no longer exist (e.g. station 107, closed 2025-02-28).
+- The last hour of a day has `date end` = `YYYY-MM-DD 24:00:00`, which is not a valid timestamp; staging derives
+  the end as start + 1 hour instead.
+- Networks (`network code`) are the 16 federal states plus `UB`, the UBA's own federal network.
 
 ## Working preferences
 

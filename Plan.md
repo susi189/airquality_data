@@ -143,11 +143,19 @@ to derive from typed staging models than from raw text.
 
 #### 1.5 Staging models
 - [x] `stg_uba__components`: integer id, readable names (`PM2` → `PM2.5`), unit alongside each pollutant
-- [ ] Check the data first: how active stations show `station_active_to`; whether `index` maps to value ranges
-- [ ] `stg_uba__stations`: cast coordinates/dates, `''` → `null`, `is_active` from `station_active_to`
-- [ ] `stg_uba__measures`: local CET/CEST → UTC (the autumn clock-change hour appears twice), keep `null` values,
-      keep `index` raw unless the check explains it; unique key station + pollutant + hour
-- [ ] Tests and column descriptions for the staging models (`_uba__models.yml`)
+- [x] Check the data first:
+  - empty `station_active_to` = still operating
+  - `index` = pollutant-specific value band → `value_class`, kept out of marts
+  - values are decimals
+  - last hour ends at `24:00:00`
+  - networks = 16 states + `UB`
+  - closed stations appear with null-only rows
+- [x] `stg_uba__stations`: typed columns, `''` → `null`, `is_active` from `active_to` (evaluated at query time)
+- [x] `stg_uba__measures`: local time → UTC via `Europe/Berlin`, end = start + 1 hour, `null` values kept,
+      `value_class`, unique `measure_key`
+- [x] Tests and column descriptions for all three staging models (`_uba__models.yml`), plus a warn-only custom test
+      for measurements after a station's closing date. `dbt build`: 3 models, 19 tests pass.
+- [ ] Open: how the API reports the repeated hour at the October clock change (check once October data is pulled)
 - [ ] `stg_aqn__*` for the synthetic tables
 
 #### 1.6 Marts

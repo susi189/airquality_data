@@ -1,0 +1,127 @@
+version: 2
+
+models:
+  - name: stg_uba__components
+    description: Pollutants measured by the network, one row per pollutant.
+    columns:
+      - name: component_id
+        description: Pollutant id used by the API and in measures.
+        data_tests:
+          - unique
+          - not_null
+      - name: component_code
+        description: API code. Note that PM2.5 is coded as `PM2`.
+        data_tests:
+          - unique
+          - not_null
+      - name: pollutant
+        description: Readable pollutant name used in questions and reports, e.g. `PM10`, `PM2.5`, `NO2`.
+      - name: component_symbol
+        description: Pollutant symbol with subscripts, e.g. `PM₂,₅`.
+      - name: component_name
+        description: Descriptive name. Both PM10 and PM2.5 are called "Particulate matter"; use `pollutant` to tell them apart.
+      - name: unit
+        description: Unit of the measured values, e.g. `µg/m³` (most pollutants), `mg/m³` (CO), `ng/m³` (heavy metals).
+
+  - name: stg_uba__stations
+    description: >
+      Every measuring station the UBA has ever operated, including closed ones (~2,400).
+      Use `is_active` to restrict to stations that are still operating.
+    columns:
+      - name: station_id
+        description: Station id used by the API and in measures.
+        data_tests:
+          - unique
+          - not_null
+      - name: station_code
+        description: Official European station code, e.g. `DEBW008`.
+        data_tests:
+          - unique
+          - not_null
+      - name: station_name
+        description: Station name, usually city and street.
+      - name: station_synonym
+        description: Short internal alias; often missing.
+      - name: city
+        description: City or municipality of the station.
+      - name: street
+        description: Street of the station address.
+      - name: street_nr
+        description: House number of the station address; often missing.
+      - name: zip_code
+        description: Postal code of the station address.
+      - name: latitude
+        description: Latitude in decimal degrees (WGS84).
+      - name: longitude
+        description: Longitude in decimal degrees (WGS84).
+      - name: active_from
+        description: Date the station started operating.
+      - name: active_to
+        description: Date the station stopped (or will stop) operating. Null while the station is still operating.
+      - name: network_code
+        description: Measuring network, mostly federal states (e.g. `BW`, `BY`); `UB` is the UBA's own federal network.
+      - name: network_name
+        description: Name of the measuring network, e.g. `Bavaria`, `UBA`.
+      - name: station_type
+        description: Main influence on the station's air, e.g. `traffic`, `background`, `industrial`.
+      - name: area_type
+        description: Surroundings of the station, e.g. `urban`, `suburban`, `rural`.
+      - name: is_active
+        description: True if the station is still operating today (`active_to` is empty or in the future).
+        data_tests:
+          - not_null
+
+  - name: stg_uba__measures
+    description: >
+      Hourly average concentrations (scope 2), one row per station, pollutant and hour.
+      Missing measurements are rows with a null `value`, not absent rows.
+    columns:
+      - name: measure_key
+        description: Unique key of a row, built from station, pollutant, scope and start hour.
+        data_tests:
+          - unique
+          - not_null
+      - name: station_id
+        description: Station that measured the value.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_uba__stations')
+                field: station_id
+      - name: component_id
+        description: Pollutant that was measured.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_uba__components')
+                field: component_id
+          - accepted_values:
+              arguments:
+                values: [1, 3, 4, 5, 9]
+                quote: false
+      - name: scope_id
+        description: Averaging period. Always 2 (one-hour average) in this project.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [2]
+                quote: false
+      - name: measured_from_local
+        description: Start of the hour in German local time (CET in winter, CEST in summer).
+        data_tests:
+          - not_null
+      - name: measured_to_local
+        description: End of the hour in German local time (start + 1 hour).
+      - name: measured_from_utc
+        description: Start of the hour in UTC. Use this to compare hours across daylight-saving changes.
+      - name: value
+        description: >
+          Average concentration over the hour, in the pollutant's unit (see stg_uba__components.unit).
+          Decimal; never round. Null when no valid measurement exists for that hour. Recently closed stations
+          also appear with null values only, so not every null is a sensor gap; check stg_uba__stations.is_active.
+      - name: value_class
+        description: >
+          Pollutant-specific band of `value` provided by the API (e.g. PM10 in steps of 5 µg/m³).
+          Derived from `value` and not an official air quality index; null when `value` is null.
